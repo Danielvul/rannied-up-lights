@@ -1,0 +1,126 @@
+diff --git a/porting/himax/we2/drivers/OV5647_mipi_2lane_1296x972.i b/porting/himax/we2/drivers/OV5647_mipi_2lane_1296x972.i
+index 4c85950..c39e76a 100644
+--- a/porting/himax/we2/drivers/OV5647_mipi_2lane_1296x972.i
++++ b/porting/himax/we2/drivers/OV5647_mipi_2lane_1296x972.i
+@@ -46,8 +46,12 @@
+ 	// {HX_CIS_I2C_Action_W, 0x380c, 0x0c}, // 0x0a 4:0 12:8 H
+ 	// {HX_CIS_I2C_Action_W, 0x380d, 0x68}, // 0x8c 7:0 7:0  H
+ 
+-	{HX_CIS_I2C_Action_W, 0x380c, 0x0a}, // 0x0a 4:0 12:8 H
+-	{HX_CIS_I2C_Action_W, 0x380d, 0x8c}, // 0x8c 7:0 7:0  H
++	// OpenCorn: line length 1896 (was 2700) and frame height 1210 (was the 1968 default):
++	// 972 rows read in 23 ms plus a 5.5 ms gap so the driver re-arms in time -> ~35 fps (was 15).
++	{HX_CIS_I2C_Action_W, 0x380c, 0x07}, // 0x0a 4:0 12:8 H
++	{HX_CIS_I2C_Action_W, 0x380d, 0x68}, // 0x8c 7:0 7:0  H
++	{HX_CIS_I2C_Action_W, 0x380e, 0x04},
++	{HX_CIS_I2C_Action_W, 0x380f, 0xba},
+ 
+ 	{HX_CIS_I2C_Action_W, 0x3811, 0x0c},
+ 	{HX_CIS_I2C_Action_W, 0x3813, 0x06},
+@@ -71,13 +75,19 @@
+ 	{HX_CIS_I2C_Action_W, 0x3f05, 0x02},
+ 	{HX_CIS_I2C_Action_W, 0x3f06, 0x10},
+ 	{HX_CIS_I2C_Action_W, 0x3f01, 0x0a},
++	// OpenCorn: anti-flicker steps for line length 1896 (50 Hz 422 lines, 60 Hz 352) and as many
++	// steps as fit in the 1210-line frame; auto exposure capped at the frame (1206 lines, ~29 ms).
+ 	{HX_CIS_I2C_Action_W, 0x3a08, 0x01},
+-	{HX_CIS_I2C_Action_W, 0x3a09, 0x28},
+-	{HX_CIS_I2C_Action_W, 0x3a0a, 0x00},
+-	{HX_CIS_I2C_Action_W, 0x3a0b, 0xf6},
+-	{HX_CIS_I2C_Action_W, 0x3a0d, 0x08},
+-
+-	{HX_CIS_I2C_Action_W, 0x3a0e, 0x06}, // 0x07 1:0 9:8 V
++	{HX_CIS_I2C_Action_W, 0x3a09, 0xa6},
++	{HX_CIS_I2C_Action_W, 0x3a0a, 0x01},
++	{HX_CIS_I2C_Action_W, 0x3a0b, 0x60},
++	{HX_CIS_I2C_Action_W, 0x3a0d, 0x03},
++
++	{HX_CIS_I2C_Action_W, 0x3a0e, 0x02}, // 0x07 1:0 9:8 V
++	{HX_CIS_I2C_Action_W, 0x3a02, 0x04},
++	{HX_CIS_I2C_Action_W, 0x3a03, 0xb6},
++	{HX_CIS_I2C_Action_W, 0x3a14, 0x04},
++	{HX_CIS_I2C_Action_W, 0x3a15, 0xb6},
+ 
+ 	// AWB
+ 	{HX_CIS_I2C_Action_W, 0x5180, 0x40}, // fast awb
+diff --git a/porting/himax/we2/drivers/OV5647_mipi_2lane_640x480.i b/porting/himax/we2/drivers/OV5647_mipi_2lane_640x480.i
+index b799e63..6d28862 100644
+--- a/porting/himax/we2/drivers/OV5647_mipi_2lane_640x480.i
++++ b/porting/himax/we2/drivers/OV5647_mipi_2lane_640x480.i
+@@ -25,6 +25,11 @@
+ 		{HX_CIS_I2C_Action_W, 0x3b07, 0x0c},
+ 		{HX_CIS_I2C_Action_W, 0x380c, 0x07},
+ 		{HX_CIS_I2C_Action_W, 0x380d, 0x3c},
++		// OpenCorn: frame height 700 lines (was the 1968 default). Pixel clock ~58 MHz, line 32 us:
++		// 480 rows in 15 ms plus a gap for the driver to re-arm -> 45 fps measured, which is where a
++		// 21 ms model tops out (shorter frames measured slower). Tune live with AT+SETREG=380f,<hex>.
++		{HX_CIS_I2C_Action_W, 0x380e, 0x02},
++		{HX_CIS_I2C_Action_W, 0x380f, 0xbc},
+ 		{HX_CIS_I2C_Action_W, 0x3814, 0x35},
+ 		{HX_CIS_I2C_Action_W, 0x3815, 0x35},
+ 		{HX_CIS_I2C_Action_W, 0x3708, 0x64},
+@@ -34,7 +39,7 @@
+ 		{HX_CIS_I2C_Action_W, 0x380a, 0x01},
+ 		{HX_CIS_I2C_Action_W, 0x380b, 0xe0},
+ 		{HX_CIS_I2C_Action_W, 0x3800, 0x00},
+-		{HX_CIS_I2C_Action_W, 0x3801, 0x10},
++		{HX_CIS_I2C_Action_W, 0x3801, 0x11}, // OpenCorn: was 0x10; one pixel right puts the colour pattern in step (0x10 is pink)
+ 		{HX_CIS_I2C_Action_W, 0x3802, 0x00},
+ 		{HX_CIS_I2C_Action_W, 0x3803, 0x00},
+ 		{HX_CIS_I2C_Action_W, 0x3804, 0x0a},
+@@ -63,7 +68,12 @@
+ 		{HX_CIS_I2C_Action_W, 0x3a0a, 0x00},
+ 		{HX_CIS_I2C_Action_W, 0x3a0b, 0xfb},
+ 		{HX_CIS_I2C_Action_W, 0x3a0d, 0x02},
+-		{HX_CIS_I2C_Action_W, 0x3a0e, 0x01},
++		{HX_CIS_I2C_Action_W, 0x3a0e, 0x02}, // OpenCorn: two 50 Hz steps (604 lines) fit in the frame (was 1)
++		// OpenCorn: cap auto exposure at the frame (696 lines, ~22 ms)
++		{HX_CIS_I2C_Action_W, 0x3a02, 0x02},
++		{HX_CIS_I2C_Action_W, 0x3a03, 0xb8},
++		{HX_CIS_I2C_Action_W, 0x3a14, 0x02},
++		{HX_CIS_I2C_Action_W, 0x3a15, 0xb8},
+ 		{HX_CIS_I2C_Action_W, 0x3a0f, 0x58},
+ 		{HX_CIS_I2C_Action_W, 0x3a10, 0x50},
+ 		{HX_CIS_I2C_Action_W, 0x3a1b, 0x58},
+diff --git a/porting/himax/we2/drivers/drv_common.c b/porting/himax/we2/drivers/drv_common.c
+index 9584b90..f44e79f 100644
+--- a/porting/himax/we2/drivers/drv_common.c
++++ b/porting/himax/we2/drivers/drv_common.c
+@@ -88,7 +88,7 @@ el_err_code_t _drv_capture(uint32_t timeout) {
+             _initiated_before = false;
+             return EL_ETIMOUT;
+         }
+-        el_sleep(3);
++        el_sleep(1);  // OpenCorn: was 3 ms; notice frames sooner so the camera re-arms in time
+     }
+ 
+     return EL_OK;
+diff --git a/porting/himax/we2/drivers/drv_ov5647.h b/porting/himax/we2/drivers/drv_ov5647.h
+index 9ab27e5..2278de0 100644
+--- a/porting/himax/we2/drivers/drv_ov5647.h
++++ b/porting/himax/we2/drivers/drv_ov5647.h
+@@ -49,16 +49,20 @@
+ #define OV5647_MIPI_2592X1944 1
+ #define OV5647_MIPI_1296X972  2
+ 
+-#define OV5647_MIPI_MODE      OV5647_MIPI_1296X972
++// OpenCorn: 640x480 mode reads half the rows of 1296x972, so frames finish twice as fast;
++// it still covers the whole sensor, so 240x240 output keeps the same field of view.
++#define OV5647_MIPI_MODE      OV5647_MIPI_640X480
+ 
+ #if (OV5647_MIPI_MODE == OV5647_MIPI_640X480)
+     #define OV5647_MIPI_CLOCK_FEQ (220)  // MHz
+     #define OV5647_SENSOR_WIDTH   640
+     #define OV5647_SENSOR_HEIGHT  480
+     #define OV5647_SUB_SAMPLE     INP_SUBSAMPLE_DISABLE
+-    #define OV5647_BINNING_0      INP_BINNING_DISABLE
+-    #define OV5647_BINNING_1      INP_BINNING_4TO2_B
+-    #define OV5647_BINNING_2      INP_BINNING_8TO2_B
++    // OpenCorn: one step coarser than Seeed's, to match the res = sensor / 2, / 4, / 8 the driver
++    // assumes; otherwise 240x240 is cropped out of the unscaled 640x480 (a 2.7x zoom).
++    #define OV5647_BINNING_0      INP_BINNING_4TO2_B
++    #define OV5647_BINNING_1      INP_BINNING_8TO2_B
++    #define OV5647_BINNING_2      INP_BINNING_16TO2_B
+ #elif (OV5647_MIPI_MODE == OV5647_MIPI_2592X1944)
+     #define OV5647_MIPI_CLOCK_FEQ (350)  // MHz
+     #define OV5647_SENSOR_WIDTH   2592

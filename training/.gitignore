@@ -1,0 +1,9 @@
+.venv/
+dataset/
+__pycache__/
+xiao_bridge/secrets.h
+ribbon-seeed.gif
+ribbon-orientation.jpg
+v2_firmware/work/
+v2_firmware/images/
+snapshots/
