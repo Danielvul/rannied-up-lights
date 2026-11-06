@@ -4,7 +4,9 @@
 #
 #   images/fast-1296.img  ov5647-fast.patch: stock 1296x972 mode, shorter lines and frames, quicker
 #                         re-arm -> ~35 fps (was 15)
-#   images/fast-640.img   ov5647-640.patch: the same plus the 640x480 mode, which reads half the rows
+#   images/fast-640.img   ov5647-640.patch: the same plus the 640x480 mode, which reads half the rows -> 45 fps
+#   images/fast-640-spi.img  + grove-spi.patch: also the SPI link to the stacked XIAO. EXPERIMENTAL: the V2
+#                         then holds XIAO D9 (an ESP32-C3 boot pin) low, so the XIAO can't boot
 #                         -> 45 fps (the 21 ms model's limit); tune live with AT+SETREG
 #
 #   ./build.sh            downloads what it needs into ./work, builds both, prints the flash command
@@ -37,14 +39,15 @@ MAKE_ARGS=(-C sscma-example-we2/EPII_CM55M_APP_S TARGET=GROVE_VISION_AI_V2)
 [ -f "$OBJ/.opencorn-4d64ff2" ] || make "${MAKE_ARGS[@]}" clean >/dev/null
 mkdir -p "$OBJ" && touch "$OBJ/.opencorn-4d64ff2"
 
-build() {  # build <patch> <image name>
+build() {  # build <image name> <patch>...
+  local name=$1; shift
   git -C "$SSCMA" checkout -q -- .
-  git -C "$SSCMA" apply --whitespace=nowarn "$HERE/$1"
-  # make does not track the .i register tables or the camera header, so rebuild the WE2 port objects.
-  find "$OBJ"/gnu_epii_evb_WLCSP65/library/sscma_micro/porting/himax/we2 -name "*.o" -delete 2>/dev/null || true
+  for patch in "$@"; do git -C "$SSCMA" apply --whitespace=nowarn "$HERE/$patch"; done
+  # make does not track the .i register tables or the shared headers, so rebuild SSCMA-Micro's objects.
+  find "$OBJ"/gnu_epii_evb_WLCSP65/library/sscma_micro -name "*.o" -delete 2>/dev/null || true
   # The link step's object list needs GNU make 4's $(file ...); write it ourselves (see objs-list.mk).
   make "${MAKE_ARGS[@]}" -f "$HERE/objs-list.mk" opencorn-objs >/dev/null 2>&1 || { echo "Couldn't write the link's object list (objs-list.mk)"; exit 1; }
-  echo "Compiling $2 (full log in work/build.log)..."
+  echo "Compiling $name (full log in work/build.log)..."
   if ! make "${MAKE_ARGS[@]}" -j8 > build.log 2>&1; then
     grep -E "error|Error" build.log | head -20
     echo "Build failed, see $(pwd)/build.log"
@@ -54,11 +57,12 @@ build() {  # build <patch> <image name>
   (cd sscma-example-we2/we2_image_gen_local &&
    cp ../EPII_CM55M_APP_S/obj_epii_evb_icv30_bdv10/gnu_epii_evb_WLCSP65/EPII_CM55M_gnu_epii_evb_WLCSP65_s.elf input_case1_secboot/ &&
    ./we2_local_image_gen_macOS_arm64 project_case1_blp_wlcsp.json > /dev/null &&
-   cp output_case1_sec_wlcsp/output.img "$HERE/images/$2.img")
-  ls -la "$HERE/images/$2.img"
+   cp output_case1_sec_wlcsp/output.img "$HERE/images/$name.img")
+  ls -la "$HERE/images/$name.img"
 }
-build ov5647-fast.patch fast-1296
-build ov5647-640.patch fast-640
+build fast-1296 ov5647-fast.patch
+build fast-640 ov5647-640.patch
+build fast-640-spi ov5647-640.patch grove-spi.patch
 
 cat <<EOF
 

@@ -2,6 +2,8 @@
 
 Records labelled throw clips from the Grove Vision AI V2 camera so we can train the hit/miss model.
 
+**Connecting, flashing and fixing things without internet:** see [RUNBOOK.md](RUNBOOK.md).
+
 ## Before you start (one-off)
 
 1. Connect the OV5647 camera to the Vision AI V2 with the 15-pin ribbon (metal contacts facing the socket's contacts, latch closed).
@@ -29,8 +31,8 @@ Then open <http://localhost:8765>. It shows the live feed with frame rate, brigh
 Overlays highlight blown areas (pink), pure black (blue) and what the motion filter sees (green). "Save snapshot" puts a frame in `dataset/snapshots/`.
 Quit the viewer (Ctrl+C) before running `capture.py`: only one program can use the USB port at a time.
 
-**Ask Mistral** sends the current frame to the private Mistral model on SayGM and draws what it finds; **Live** keeps doing that.
-**Record for training** (button or `R`) records the next 2 seconds, sends every frame to Mistral and shows the results as a photo grid.
+**Ask the AI** sends the current frame to a private vision model on SayGM and draws what it finds; **Live** keeps doing that.
+**Record for training** (button or `R`) records the next second and shows the frames. Press **S** to send them to two private models (Qwen and GLM) or **D** to discard them.
 Each recording is saved as training data in `dataset/<model>-cycle-NN/<timestamp>/` (frames, `meta.json`, and `boxes.json` in the same format as `autobox.py`).
 Set the model name (e.g. OpenVolleyball) and cycle on the page; **New cycle** starts the next one.
 
@@ -38,7 +40,12 @@ Set the model name (e.g. OpenVolleyball) and cycle on the page; **New cycle** st
 
 The XIAO passes the V2's serial data over WiFi, so the laptop doesn't need a cable under the board. Everything else works the same.
 
-Hardware: **stack the XIAO on the V2's XIAO socket** (the socket joins the XIAO's D6/D7 to the V2's serial port). Power only through the XIAO's USB-C; leave the V2's USB-C unplugged.
+Hardware: **stack the XIAO on the V2's XIAO socket**. The socket joins the XIAO to both of the V2's ports:
+
+- **SPI** (default in `xiao_bridge.ino`, `LINK_SPI 1`): SCK/MISO/MOSI on D8/D9/D10, select D1, data-ready D0. Needs the OpenCorn V2 firmware (`fast-640.img`, see below), which switches the V2's SPI port on. Fast enough for 45 photos a second.
+- **Serial** (`LINK_SPI 0`): D7 = V2 TX, D6 = V2 RX at 921600 baud. Works with Seeed's stock firmware, but tops out near 21 photos a second.
+
+With SPI, D6/D7 are free for the LEDs and speaker. Power only through the XIAO's USB-C; leave the V2's USB-C unplugged.
 
 1. Copy `xiao_bridge/secrets.example.h` to `xiao_bridge/secrets.h` (already done once) and put your 2.4 GHz WiFi name and password in it.
    Leave the name empty to use the XIAO's own "BoardCam" network instead (its password is in the same file).
@@ -63,7 +70,7 @@ Seeed's stock V2 firmware runs the camera at 15 fps, too slow to catch a fast ba
 | `fast-1296.img` | 1296×972, shorter lines and frames | ~35 fps |
 | `fast-640.img` | 640×480 (same field of view, half the rows to read) | 45 fps |
 
-At 45 fps the 21 ms model is the limit, so a smaller model is the next step. The live picture stays near 15 fps: sending photos is slower than the camera. The viewer's **Test on-board speed** button measures detection, which sends only results.
+At 45 fps the 21 ms model is the limit, so a smaller model is the next step. Photos need more bandwidth than detection results: 45 photos a second is about 176 KB/s, while the V2's serial ports (USB included) carry about 90 KB/s, roughly 21 photos a second. `fast-640.img` therefore also switches on the V2's SPI port for the stacked XIAO (`grove-spi.patch`). The viewer's **Test on-board speed** button measures detection, which sends only results.
 
 1. Build both images (downloads Arm's compiler and Seeed's source into `v2_firmware/work`, about 1 GB):
    ```bash
@@ -100,6 +107,20 @@ Each key press saves the **last 3 seconds** (`--seconds` to change). Clips go to
 
 Rough targets for the first training round: **150+ hits, 150+ unders, 100+ bounces, 150+ nothing** clips, spread over 3–4 different places or lighting conditions.
 
+## Review the labels
+
+Open http://localhost:8765/review (or **Review recordings →** on the live page). It lists every recording in every cycle with how many frames you've checked, and shows each frame with the AI's boxes: green is the label used for training, dashed orange and blue are the first AI's (DeepSeek, or Mistral on older clips) and GLM's guesses.
+
+| You see | Do |
+|---|---|
+| Box is right | **Enter** (marks it checked, next frame) |
+| Box wrong or missing | drag a new box, which replaces any boxes there; click a box and press **Delete** to remove it |
+| Box but nothing there | **N** (kept as a "nothing here" example) |
+| Frame is useless | **X** (left out of training) |
+| The models disagreed | **1** for the first AI's boxes (DeepSeek, or Mistral on older clips), **2** for GLM's |
+
+**Tab** jumps to the next frame the AI wasn't sure about; **←/→** step through; **U** drops your label. Your labels go in `review.json` next to the recording's `boxes.json` and always win; the AI's labels are never changed (`labels.py` has the rules). Every frame you check is also known-correct, so the checked frames double as the test set for the trained model.
+
 ## Options
 
 - `--res 1`: 480×480 instead of 240×240 (sharper, but fewer frames per second)
@@ -120,7 +141,7 @@ Then:
 
 ```bash
 .venv/bin/python autobox.py --compare      # same 30 frames through 6 private models -> dataset/compare.html
-.venv/bin/python autobox.py --limit 50     # test run with the default model (mistral-large-4-tee)
+.venv/bin/python autobox.py --limit 50     # test run with the default model (deepseek-v4.1-flash-tee)
 .venv/bin/python autobox.py --review       # dataset/review.html: check the boxes
 .venv/bin/python autobox.py                # box everything not yet boxed
 .venv/bin/python autobox.py --watch        # keep boxing new clips while capture.py runs

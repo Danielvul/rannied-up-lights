@@ -127,6 +127,8 @@ class VisionAI:
             self.ser = serial.Serial(port, baud, timeout=0.1)
         self.replies = collections.deque(maxlen=50)
         self.frames = collections.deque(maxlen=300)  # (timestamp, jpeg bytes)
+        self.frame_boxes = collections.deque(maxlen=300)  # per frame: on-board detections, or None (photo only)
+        self.last_perf = None  # the V2's latest model timing, ms: [prepare, model, post-process]
         self.results = collections.deque(maxlen=300)  # (timestamp, data) from INVOKE without images
         self.last_frame_time = 0.0
         self.frame_count = 0
@@ -180,6 +182,9 @@ class VisionAI:
                     if not jpeg_ok(jpeg):
                         self.bad_frames += 1
                         continue
+                    self.frame_boxes.append(msg["data"].get("boxes"))  # INVOKE with images: [x, y, w, h, score, class]
+                    if msg["data"].get("perf"):
+                        self.last_perf = msg["data"]["perf"]  # ms on the V2: [prepare, model, post-process]
                     self.frames.append((time.time(), jpeg))
                     self.last_frame_time = time.time()
                     self.frame_count += 1

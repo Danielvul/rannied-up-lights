@@ -41,7 +41,7 @@ import openai
 
 DATASET_DIR = Path(__file__).resolve().parent / "dataset"
 DEFAULT_BASE_URL = "https://api.saygm.com/v1"
-DEFAULT_MODEL = "mistral-large-4-tee"
+DEFAULT_MODEL = "deepseek-v4.1-flash-tee"  # 39/40 on reviewed frames; Mistral was withdrawn from SayGM
 
 PROMPT = """This is one frame from a camera mounted underneath a cornhole board, pointing up at the hole.
 
@@ -52,9 +52,29 @@ Return a tight box for each bag as x1,y1 (top-left) and x2,y2 (bottom-right) in 
 normalised to 0-1000, where (0,0) is the image's top-left corner and (1000,1000) its bottom-right. \
 If no bag is visible, return an empty list. Do not box hands, feet or other objects."""
 
-def target_prompt(target):
+# What the labellers should know about each run's camera, by the start of its model name.
+CAMERA_NOTES = {
+    "opencorn": "This camera sits low under a cornhole table. A white rectangular sheet of paper fills the middle "
+                "of the picture.\n\n"
+                "RULE: a bag only counts if it is IN the white paper's rectangle, seen in front of the paper as it "
+                "falls. Work in two steps. First find the paper's four edges. Then look for a bag inside those "
+                "edges, ignoring everything outside them.\n\n"
+                "Do NOT box these, however clearly you can see them:\n"
+                "- a bag ABOVE the paper, such as one sitting in or on the hole near the top of the picture\n"
+                "- a bag BELOW the paper, such as one lying on the floor at the bottom of the picture\n"
+                "- a bag to the LEFT or RIGHT of the paper\n\n"
+                "If the only bags in the picture are outside the paper, return an empty list. Most frames have no "
+                "bag in the paper, so an empty list is the usual answer. A falling bag can be blurred by speed.\n\n",
+}
+
+
+def camera_note(model_name):
+    return next((note for start, note in CAMERA_NOTES.items() if model_name.lower().startswith(start)), "")
+
+
+def target_prompt(target, note=""):
     """Prompt for boxing any object, e.g. for live tests in viewer.py ("volleyball")."""
-    return (f"Find every {target} visible in this camera frame, fully or partially.\n\n"
+    return (f"{note}Find every {target} visible in this camera frame, fully or partially.\n\n"
             "Return a tight box for each as x1,y1 (top-left) and x2,y2 (bottom-right) in coordinates "
             "normalised to 0-1000, where (0,0) is the image's top-left corner and (1000,1000) its bottom-right. "
             f"If no {target} is visible, return an empty list. Do not box anything else.")
@@ -130,6 +150,9 @@ def parse_bags(text):
             bags = []
         else:
             bags = lists[0]
+    # Qwen writes {"bbox_2d": [x1, y1, x2, y2], "label": ...} instead of named corners
+    bags = [dict(zip(("x1", "y1", "x2", "y2"), b["bbox_2d"])) if isinstance(b, dict) and len(b.get("bbox_2d") or []) == 4 else b
+            for b in bags]
     if not all(_is_box(b) for b in bags):
         raise ValueError(f"unexpected box format: {str(bags)[:120]}")
     return bags
@@ -159,12 +182,14 @@ class Boxer:
             api_key=key,
             base_url=os.environ.get("SAYGM_BASE_URL", DEFAULT_BASE_URL),
             max_retries=6,  # backs off automatically on 429 / 5xx
+            timeout=30,  # about 1 request in 40 stalls: retry it (normal replies take 2-18 s) rather than wait 10 minutes
         )
         self.model = args.model
         self.upscale = args.upscale
         # Plain JSON by default: on a real photo, Mistral with strict json_schema output found a clearly
         # visible volleyball 0/6 times vs 6/6 with plain JSON prompting. --structured turns it back on.
         self.structured = getattr(args, "structured", False)
+        self.reasoning_effort = getattr(args, "reasoning_effort", None)  # models that support it, e.g. GLM: "low"
         self.sem = asyncio.Semaphore(args.concurrency)
         self.sent = 0
 
@@ -181,6 +206,8 @@ class Boxer:
                 {"type": "text", "text": prompt + ("" if structured else JSON_HINT)},
             ]}],
         )
+        if self.reasoning_effort:
+            params["reasoning_effort"] = self.reasoning_effort
         if structured:
             params["response_format"] = {"type": "json_schema",
                                          "json_schema": {"name": "bags", "schema": SCHEMA, "strict": True}}
@@ -325,7 +352,7 @@ def review():
 
 # ---------------------------------------------------------------- model comparison
 
-COMPARE_MODELS = "mistral-large-4-tee,glm-5.3-flash-tee,qwen3.5-397b-a17b-tee,qwen3.8-27b-tee,kimi-k3-tee,gemma-4-31b-turbo-tee"
+COMPARE_MODELS = "deepseek-v4.1-flash-tee,glm-5.3-flash-tee,qwen3.5-397b-a17b-tee,qwen3.8-27b-tee,kimi-k3-tee,gemma-4-31b-turbo-tee"
 
 
 def iou(a, b):
@@ -429,7 +456,7 @@ def main():
     p.add_argument("--concurrency", type=int, default=8, help="frames in flight at once")
     p.add_argument("--upscale", type=int, default=2, help="enlarge frames before sending (helps box precision)")
     p.add_argument("--structured", action="store_true",
-                   help="force the reply format with json_schema (off by default: it made Mistral miss objects)")
+                   help="force the reply format with json_schema (off by default: it made Mistral, our old labeller, miss objects)")
     p.add_argument("--threshold", type=int, default=25, help="pixel difference that counts as motion")
     p.add_argument("--min-area", type=int, default=40, help="changed pixels needed to count a frame as motion")
     args = p.parse_args()

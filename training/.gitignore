@@ -7,3 +7,9 @@ ribbon-orientation.jpg
 v2_firmware/work/
 v2_firmware/images/
 snapshots/
+.venv-train/
+train/work/
+train/models/
+*.pt
+runs/
+calibration_image_sample_data*.npy

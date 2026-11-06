@@ -1,0 +1,43 @@
+diff --git a/porting/himax/we2/drivers/drv_shared_cfg.h b/porting/himax/we2/drivers/drv_shared_cfg.h
+index 704efe8..3e8e5bf 100644
+--- a/porting/himax/we2/drivers/drv_shared_cfg.h
++++ b/porting/himax/we2/drivers/drv_shared_cfg.h
+@@ -57,7 +57,13 @@ static_assert(YUV422_BASE_SIZE <= SRAM_1_TAIL_SIZE, "SRAM1 is not enough");
+ #define JPEG_FILL_BASE_ADDR ALIGN_32BIT(JPEG_BASE_ADDR + JPEG_BASE_SIZE)
+ #define JPEG_FILL_SIZE      0x1000  // 4KB
+ 
+-#if defined(CONFIG_EL_BOARD_SENSECAP_WATCHER)
++#if defined(CONFIG_EL_BOARD_GROVE_VISION_AI_V2)
++    // OpenCorn: SPI buffers for the Grove (room taken from the I2C transport's buffer below)
++    #define SPI_TRANSPORT_TX_BASE_ADDR ALIGN_32BIT(JPEG_FILL_BASE_ADDR + JPEG_FILL_SIZE)
++    #define SPI_TRANSPORT_TX_BASE_SIZE (32 * 1024)
++    #define SPI_TRANSPORT_RX_BASE_ADDR ALIGN_32BIT(SPI_TRANSPORT_TX_BASE_ADDR + SPI_TRANSPORT_TX_BASE_SIZE)
++    #define SPI_TRANSPORT_RX_BASE_SIZE (4 * 1024)
++#elif defined(CONFIG_EL_BOARD_SENSECAP_WATCHER)
+     #define SPI_TRANSPORT_TX_BASE_ADDR ALIGN_32BIT(JPEG_FILL_BASE_ADDR + JPEG_FILL_SIZE)
+     #define SPI_TRANSPORT_TX_BASE_SIZE (64 * 1024)
+     #define SPI_TRANSPORT_RX_BASE_ADDR ALIGN_32BIT(SPI_TRANSPORT_TX_BASE_ADDR + SPI_TRANSPORT_TX_BASE_SIZE)
+@@ -88,7 +94,7 @@ static_assert(YUV422_BASE_SIZE <= SRAM_1_TAIL_SIZE, "SRAM1 is not enough");
+ 
+ #if defined(CONFIG_EL_BOARD_GROVE_VISION_AI_V2)
+     #define WIRE_TRANSPORT_TX_BASE_ADDR ALIGN_32BIT(SERIAL2_TRANSPORT_RX_BASE_ADDR + SERIAL2_TRANSPORT_RX_BASE_SIZE)
+-    #define WIRE_TRANSPORT_TX_BASE_SIZE (36 * 1024)
++    #define WIRE_TRANSPORT_TX_BASE_SIZE (8 * 1024)  // OpenCorn: was 36 KB; I2C is too slow for photos anyway
+     #define WIRE_TRANSPORT_RX_BASE_ADDR ALIGN_32BIT(WIRE_TRANSPORT_TX_BASE_ADDR + WIRE_TRANSPORT_TX_BASE_SIZE)
+     #define WIRE_TRANSPORT_RX_BASE_SIZE (6 * 1024)
+ #else
+diff --git a/porting/himax/we2/el_device_we2.cpp b/porting/himax/we2/el_device_we2.cpp
+index 825eb18..a34cdf8 100644
+--- a/porting/himax/we2/el_device_we2.cpp
++++ b/porting/himax/we2/el_device_we2.cpp
+@@ -166,7 +166,9 @@ void DeviceWE2::init() {
+ 
+     this->_network = nullptr;
+ 
+-#ifdef CONFIG_EL_BOARD_SENSECAP_WATCHER
++#if defined(CONFIG_EL_BOARD_SENSECAP_WATCHER) || defined(CONFIG_EL_BOARD_GROVE_VISION_AI_V2)
++    // OpenCorn: SPI slave on the Grove too, for the stacked XIAO (SCK/MISO/MOSI D8-D10, CS D1, data-ready D0,
++    // as in Seeed's inference_spi example). Serial is capped at 921600 baud, about 21 photos a second.
+     static sspiWE2 spi{};
+     spi.type = EL_TRANSPORT_SPI;
+     this->_transports.emplace_front(&spi);
