@@ -13,3 +13,4 @@ train/models/
 *.pt
 runs/
 calibration_image_sample_data*.npy
+saygm-blog-draft.md

@@ -115,12 +115,13 @@ def score(pred, info, threshold, size):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--model-name", default="OpenVolleyball", help="as on the Record card")
+    ap.add_argument("--model-name", default="OpenVolleyball", help="as on the Record card; comma-separate to combine")
     ap.add_argument("--cycle", type=int, help="only this cycle (default: all cycles of the model)")
     ap.add_argument("--test-clips", type=int, default=2, help="whole recordings held back for testing")
     ap.add_argument("--test", help="hold back exactly these recordings, by the end of their names, comma-separated")
     ap.add_argument("--imgsz", type=int, default=160, help="input size, a multiple of 8 (160 -> 20x20 grid)")
     ap.add_argument("--epochs", type=int, default=80)
+    ap.add_argument("--min-passes", type=int, default=25, help="don't pick or stop before this pass: early test scores are noisy")
     ap.add_argument("--threshold", type=float, default=0.5, help="cell score counted as a centre")
     args = ap.parse_args()
     if args.imgsz % STRIDE:
@@ -128,9 +129,10 @@ def main():
 
     import tensorflow as tf  # slow import: after argument errors
 
-    prefix = f"{args.model_name}-cycle-"
-    clips = [c for c in labels.summary(DATASET_DIR) if c["group"].startswith(prefix)
-             and (args.cycle is None or c["group"] == f"{prefix}{args.cycle:02d}")]
+    names = args.model_name.split(",")  # several recording names train one combined model
+    prefixes = tuple(f"{n}-cycle-" for n in names)
+    clips = [c for c in labels.summary(DATASET_DIR) if c["group"].startswith(prefixes)
+             and (args.cycle is None or c["group"] in [f"{p}{args.cycle:02d}" for p in prefixes])]
     if len(clips) <= args.test_clips:
         sys.exit(f"Only {len(clips)} recordings for {args.model_name}: need more than --test-clips {args.test_clips}")
     ranked = sorted(clips, key=lambda c: (c["reviewed"] / max(1, c["frames"]), c["name"]), reverse=True)
@@ -163,11 +165,13 @@ def main():
         xa, ya = augment(xtr, ytr, rng)
         hist = model.fit(xa, ya, batch_size=16, epochs=1, verbose=0, shuffle=True)
         val = float(model.evaluate(xte, yte, verbose=0))
-        if val < best_loss - 1e-4:
+        if epoch + 1 < args.min_passes:
+            pass  # too early to judge: the test score jumps around
+        elif val < best_loss - 1e-4:
             best, best_loss, patience = model.get_weights(), val, 0
         else:
             patience += 1
-        if epoch % 5 == 0 or patience == 0:
+        if epoch % 5 == 0 or (patience == 0 and best is not None):
             print(f"pass {epoch + 1}: train loss {hist.history['loss'][-1]:.3f}, test loss {val:.3f}" + ("  (best)" if patience == 0 else ""))
         if patience >= 20:
             print(f"Stopped: no improvement for 20 passes.")
@@ -180,7 +184,7 @@ def main():
           f"{s['false_alarm']} of {s['false_alarm'] + s['correctly_empty']} empty frames.")
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    run = HERE / "work" / f"{args.model_name}-fomo-{stamp}"
+    run = HERE / "work" / f"{'+'.join(names)}-fomo-{stamp}"
     run.mkdir(parents=True, exist_ok=True)
     model.save(run / "fomo.keras")
 

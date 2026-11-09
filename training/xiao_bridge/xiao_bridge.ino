@@ -28,6 +28,8 @@
 
 #include "secrets.h"
 
+struct SongStep;  // sound.ino: Arduino writes function prototypes above the struct
+
 #define LINK_SPI 0       // 1 = SPI link (OpenCorn V2 firmware). SPI isn't answering yet, see SPI_PROBE
 #define SPI_PROBE 0      // 1 = at boot, test the SPI link and print the results on USB. Leave 0 with the
                          // serial link: junk on the V2's SPI pins can hang it when its SPI port is off
@@ -41,7 +43,6 @@
 #define HIT_SCORE 70        // the V2 only reports dots at least this sure, out of 100
 #define HIT_FRAMES 1        // frames in a row with a dot before it counts as a hit
 #define HIT_COOLDOWN_MS 3000  // one hit per bag: ignore dots for this long after a hit
-#define HIT_SHOW_MS 1000
 
 Adafruit_NeoPixel ring(RING_LEDS, RING_PIN, NEO_GRB + NEO_KHZ800);
 WiFiServer server(TCP_PORT);
@@ -309,7 +310,6 @@ void startRing() {
 }
 
 bool v2Seen = false;       // the V2 is answering
-uint32_t showUntil = 0;    // hit light show running until this time
 
 void ringStatus() {
   if (v2Seen) ringColor(255, 255, 255);
@@ -327,7 +327,7 @@ void watchV2(size_t n) {
   if (alive != v2Seen) {
     v2Seen = alive;
     Serial.println(alive ? "V2 found: ring white" : "V2 lost: ring red");
-    if (!showUntil) ringStatus();
+    if (stripIdle()) ringStatus();  // during a win the ring follows the strip
   }
   if (now - lastFromV2 > V2_ASK_MS && now - lastAsk > V2_ASK_MS) {
     lastAsk = now;
@@ -368,7 +368,6 @@ void frameResult(bool dot) {
   if (inARow < HIT_FRAMES || (lastHit && now - lastHit < HIT_COOLDOWN_MS)) return;
   lastHit = now;
   inARow = 0;
-  showUntil = now + HIT_SHOW_MS;
   stripHit();
   Serial.println("HIT");
 }
@@ -393,25 +392,6 @@ void scanHits(const uint8_t *data, size_t n) {
   }
 }
 
-// Gold flashes chasing round the ring, then back to the status colour.
-void hitShow() {
-  static uint32_t next = 0;
-  static uint16_t step = 0;
-  if (!showUntil) return;
-  uint32_t now = millis();
-  if (now >= showUntil) {
-    showUntil = 0;
-    ringStatus();
-    return;
-  }
-  if (now < next) return;
-  next = now + 30;
-  step++;
-  ring.fill(step & 2 ? ring.Color(255, 160, 0) : ring.Color(0, 0, 0));
-  for (int i = 0; i < 6; i++) ring.setPixelColor((step + i * RING_LEDS / 6) % RING_LEDS, ring.Color(255, 255, 255));
-  ring.show();
-}
-
 void setup() {
   Serial.begin(115200);  // USB, for status messages only
   resetV2();
@@ -419,6 +399,7 @@ void setup() {
   delay(500);
   startRing();  // red until the V2 answers
   startStrip();
+  startSound();
   startWifi();  // before the link: joining WiFi takes seconds and the camera may still be streaming
   startLink();
   MDNS.begin(HOSTNAME);
@@ -426,6 +407,7 @@ void setup() {
   server.begin();
   server.setNoDelay(true);
   Serial.printf("Bridge ready on port %d (socket://%s.local:%d), free memory %u bytes\n", TCP_PORT, HOSTNAME, TCP_PORT, ESP.getFreeHeap());
+  bootBeep();
 }
 
 void dropClient(const char *why) {
@@ -484,7 +466,6 @@ void loop() {
 
   watchV2(n);
   startGame(client && client.connected());
-  hitShow();
   updateStrip();
 
   // Station mode: reconnect if the router drops us.

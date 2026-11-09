@@ -133,7 +133,11 @@ The code is `xiao_bridge/xiao_bridge.ino`. WiFi settings are in `xiao_bridge/sec
 
 ### Main LED strip
 
-The code is `xiao_bridge/strip.ino`, ported from `leds.ino`. It plays the red comet until a hit, then the full win sequence of about 10 seconds. Change `LED_COUNT`, `BRIGHTNESS_ATTRACT` and `BRIGHTNESS_WIN` at the top of that file. Power the strip from the power board, not through the ESP, and share its ground.
+The code is `xiao_bridge/strip.ino`, ported from `leds.ino`. It plays the red comet until a hit, then the full win sequence of about 9.5 seconds. Change `LED_COUNT`, `BRIGHTNESS_ATTRACT` and `BRIGHTNESS_WIN` at the top of that file. Power the strip from the power board, not through the ESP, and share its ground.
+
+### Speaker
+
+The code is `xiao_bridge/sound.ino`, ported from `leds.ino`. A small synth plays slot machine bells and coins through the ESP's I2S hardware, in its own task. Each win scene plays its part of the jackpot once, and the ESP beeps once when it finishes starting up. The sounds are the `JACKPOT_` lists at the top of that file: each line is `{note, milliseconds until the next step}`, `COIN` is a clink, and every list ends with `{0, 0}`. Raise `VOLUME` for more loudness, or `BELL_RING` for longer ringing. The speaker is a Jaycar XC3744: S goes to D1, plus power and ground. Turn its trimpot to set the volume. It's rated for 5 V. If the ESP restarts when a win starts on 3.3 V, move its power to 5 V.
 
 ### LED ring settings
 
@@ -149,9 +153,8 @@ These are at the top of `xiao_bridge.ino`:
 | `HIT_SCORE` | `70` | How sure the V2 must be of a dot, out of 100. Also set in `viewer.py` |
 | `HIT_FRAMES` | `1` | Frames in a row with a dot before it counts as a hit. Also set in `viewer.py`. Raise this if it fires with no bag |
 | `HIT_COOLDOWN_MS` | `3000` | After a hit, ignore dots for this long (ms) |
-| `HIT_SHOW_MS` | `1000` | Length of the hit light show (ms) |
 
-**Hits:** with no laptop connected, the ESP starts the model on the V2 at full speed and watches its results. A hit plays a gold light show, then the ring goes back to its status colour. The ESP's log shows `HIT` and `Game mode: V2 running the model`. With the viewer connected, press **Game mode** above the feed: the model runs at full speed and the page counts hits, but there's no live picture and Record is off. The viewer starts in Game mode: press the button to turn it off for the live picture and recording. The boards go straight into game mode whenever no laptop is connected.
+**Hits:** with no laptop connected, the ESP starts the model on the V2 at full speed and watches its results. A hit plays the strip's win sequence, and the ring matches each scene with whole-ring colours and flashes (`ringScene` in `strip.ino`), then goes back to its status colour. The ESP's log shows `HIT` and `Game mode: V2 running the model`. With the viewer connected, press **Game mode** above the feed: the model runs at full speed and the page counts hits, but there's no live picture and Record is off. The viewer starts in Game mode: press the button to turn it off for the live picture and recording. The boards go straight into game mode whenever no laptop is connected.
 
 **The ring is the status light:**
 
@@ -213,7 +216,7 @@ Train from your reviewed clips. You need at least a few clips, including some wi
 .venv-train/bin/python train/train_fomo.py --model-name OpenGlass
 ```
 
-It holds back the newest clips as its test. Add `--test 001858,002116` (the end of each clip's name) to choose them yourself, and keep a mix of drops, hands and empty clips. It prints the flash command when it finishes, and the model lands in `train/models/`. Stay on the default `--imgsz 160` offline: other sizes need a download.
+It holds back the newest clips as its test. Add `--test 001858,002116` (the end of each clip's name) to choose them yourself, and keep a mix of drops, hands and empty clips. It prints the flash command when it finishes, and the model lands in `train/models/`. To train one model on day and night together, use `--model-name opencorn-night,opencorn-day`. Stay on the default `--imgsz 160` offline: other sizes need a download.
 
 To flash it, stop the viewer, unplug the ESP's power, and plug in the V2's USB-C:
 
@@ -253,7 +256,7 @@ The branch is `training-camera-pipeline`, and the PR is <https://github.com/Dani
 | D3 | Resets the V2 at ESP start |
 | D0 | LED ring data. Also joins the V2's PA0, so it can't be used with the SPI link |
 | D2 | Main LED strip data (120 LEDs) |
-| D1 | Free, but joins the V2's PB11 |
+| D1 | Speaker signal (XC3744 S). Also joins the V2's PB11, so it can't be used with the SPI link |
 | D4, D5 | Free, but shared with the V2's I2C bus |
 
 The ESP's signal pins are **3.3 V**. A 5 V Arduino needs a level shifter (Jaycar XC4486), plus a shared ground.
