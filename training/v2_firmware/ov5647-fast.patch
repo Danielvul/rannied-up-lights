@@ -1,0 +1,58 @@
+diff --git a/porting/himax/we2/drivers/OV5647_mipi_2lane_1296x972.i b/porting/himax/we2/drivers/OV5647_mipi_2lane_1296x972.i
+index 4c85950..c39e76a 100644
+--- a/porting/himax/we2/drivers/OV5647_mipi_2lane_1296x972.i
++++ b/porting/himax/we2/drivers/OV5647_mipi_2lane_1296x972.i
+@@ -46,8 +46,12 @@
+ 	// {HX_CIS_I2C_Action_W, 0x380c, 0x0c}, // 0x0a 4:0 12:8 H
+ 	// {HX_CIS_I2C_Action_W, 0x380d, 0x68}, // 0x8c 7:0 7:0  H
+ 
+-	{HX_CIS_I2C_Action_W, 0x380c, 0x0a}, // 0x0a 4:0 12:8 H
+-	{HX_CIS_I2C_Action_W, 0x380d, 0x8c}, // 0x8c 7:0 7:0  H
++	// OpenCorn: line length 1896 (was 2700) and frame height 1210 (was the 1968 default):
++	// 972 rows read in 23 ms plus a 5.5 ms gap so the driver re-arms in time -> ~35 fps (was 15).
++	{HX_CIS_I2C_Action_W, 0x380c, 0x07}, // 0x0a 4:0 12:8 H
++	{HX_CIS_I2C_Action_W, 0x380d, 0x68}, // 0x8c 7:0 7:0  H
++	{HX_CIS_I2C_Action_W, 0x380e, 0x04},
++	{HX_CIS_I2C_Action_W, 0x380f, 0xba},
+ 
+ 	{HX_CIS_I2C_Action_W, 0x3811, 0x0c},
+ 	{HX_CIS_I2C_Action_W, 0x3813, 0x06},
+@@ -71,13 +75,19 @@
+ 	{HX_CIS_I2C_Action_W, 0x3f05, 0x02},
+ 	{HX_CIS_I2C_Action_W, 0x3f06, 0x10},
+ 	{HX_CIS_I2C_Action_W, 0x3f01, 0x0a},
++	// OpenCorn: anti-flicker steps for line length 1896 (50 Hz 422 lines, 60 Hz 352) and as many
++	// steps as fit in the 1210-line frame; auto exposure capped at the frame (1206 lines, ~29 ms).
+ 	{HX_CIS_I2C_Action_W, 0x3a08, 0x01},
+-	{HX_CIS_I2C_Action_W, 0x3a09, 0x28},
+-	{HX_CIS_I2C_Action_W, 0x3a0a, 0x00},
+-	{HX_CIS_I2C_Action_W, 0x3a0b, 0xf6},
+-	{HX_CIS_I2C_Action_W, 0x3a0d, 0x08},
+-
+-	{HX_CIS_I2C_Action_W, 0x3a0e, 0x06}, // 0x07 1:0 9:8 V
++	{HX_CIS_I2C_Action_W, 0x3a09, 0xa6},
++	{HX_CIS_I2C_Action_W, 0x3a0a, 0x01},
++	{HX_CIS_I2C_Action_W, 0x3a0b, 0x60},
++	{HX_CIS_I2C_Action_W, 0x3a0d, 0x03},
++
++	{HX_CIS_I2C_Action_W, 0x3a0e, 0x02}, // 0x07 1:0 9:8 V
++	{HX_CIS_I2C_Action_W, 0x3a02, 0x04},
++	{HX_CIS_I2C_Action_W, 0x3a03, 0xb6},
++	{HX_CIS_I2C_Action_W, 0x3a14, 0x04},
++	{HX_CIS_I2C_Action_W, 0x3a15, 0xb6},
+ 
+ 	// AWB
+ 	{HX_CIS_I2C_Action_W, 0x5180, 0x40}, // fast awb
+diff --git a/porting/himax/we2/drivers/drv_common.c b/porting/himax/we2/drivers/drv_common.c
+index 9584b90..f44e79f 100644
+--- a/porting/himax/we2/drivers/drv_common.c
++++ b/porting/himax/we2/drivers/drv_common.c
+@@ -88,7 +88,7 @@ el_err_code_t _drv_capture(uint32_t timeout) {
+             _initiated_before = false;
+             return EL_ETIMOUT;
+         }
+-        el_sleep(3);
++        el_sleep(1);  // OpenCorn: was 3 ms; notice frames sooner so the camera re-arms in time
+     }
+ 
+     return EL_OK;
